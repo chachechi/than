@@ -1,0 +1,210 @@
+%option lang = "C++"
+
+%decls %{
+  #include <string>
+  #include <sstream>
+  using string_t = std::string;
+%}
+
+%{
+  #include "expr_ast.h"
+
+  int varOffset = 0;
+
+  void resetOffset(){
+    varOffset = 0;
+  }
+
+  int getOffset(){
+    return -varOffset;
+  }
+
+  string_t newTemp(){
+    varOffset -= 4;
+    int offSet = varOffset;
+    return "ebp - " + std::to_string(-offSet);
+  }
+
+  string_t getExprPlace(ASTNode * expr){
+    if(expr->isA(NumExpr_kind)){
+      return expr->place;
+    }
+    std::ostringstream ss;
+    ss << "dword[" << expr->place << "]\n";
+    return ss.str();
+  }
+
+%}
+
+%node ASTNode %abstract %typedef = {
+  %nocreate string_t code = {""};
+  %nocreate string_t place = {""};
+}
+
+%node FuncNode ASTNode = {
+  ASTNode * expr;
+}
+
+%node expression ASTNode = {
+}
+
+%node binary expression %abstract = {
+  ASTNode * expr1;
+  ASTNode * expr2;
+}
+
+%node NumExpr expression = {
+  int value;
+}
+
+%node AddExpr binary
+%node SubExpr binary
+%node MulExpr binary
+%node DivExpr binary
+
+%operation %virtual bool genCode(ASTNode * this)
+
+genCode(expression){
+  return true;
+}
+
+genCode(NumExpr){
+  place = std::to_string(value);
+  return true;
+}
+
+genCode(AddExpr){
+  if(!expr1->genCode()){
+    return false;
+  }
+  if(!expr2->genCode()){
+    return false;
+  }
+
+  std::ostringstream ss;
+  string_t expr1Place = getExprPlace(expr1);
+  string_t expr2Place = getExprPlace(expr2);
+  place = newTemp();
+
+  ss  << expr1->code << "\n"
+      << expr2->code << "\n"
+      << "mov eax, " << expr1Place << "\n"
+      << "add eax, " << expr2Place << "\n"
+      << "mov dword[" << place << "], eax \n";
+  
+  code = ss.str();
+  return true;
+}
+
+genCode(SubExpr){
+  if(!expr1->genCode()){
+    return false;
+  }
+  if(!expr2->genCode()){
+    return false;
+  }
+
+  string_t expr1Place = getExprPlace(expr1);
+  string_t expr2Place = getExprPlace(expr2);
+  place = newTemp();
+
+  std::ostringstream ss;
+  ss  << expr1->code << "\n"
+      << expr2->code << "\n"
+      << "mov eax, " << expr1Place << "\n"
+      << "sub eax, " << expr2Place << "\n"
+      << "mov dword[" << place << "], eax\n";
+  code = ss.str();
+  return true;
+
+}
+
+genCode(MulExpr) {
+  if(!expr1->genCode())
+    return false;
+  if(!expr2->genCode())
+    return false;
+  
+  std::ostringstream ss;
+  string_t expr1Place = getExprPlace(expr1);
+  string_t expr2Place = getExprPlace(expr2);
+  place = newTemp();
+
+  ss << expr1->code << "\n"
+     << expr2->code << "\n"
+     << "mov eax, " << expr1Place << "\n"
+     << "mov ebx, " << expr2Place << "\n"
+     << "imul ebx" << "\n"
+     << "mov dword[" << place << "], eax\n";
+
+  code = ss.str();
+  return true;
+}
+
+genCode(DivExpr) {
+  if(!expr1->genCode())
+    return false;
+  if(!expr2->genCode())
+    return false;
+
+  std::ostringstream ss;
+  string_t expr1Place = getExprPlace(expr1);
+  string_t expr2Place = getExprPlace(expr2);
+  place = newTemp();
+
+  ss << expr1->code << "\n"
+    << expr2->code << "\n"
+    << "mov eax, " << expr1Place << "\n"
+    << "mov ebx, " << expr2Place << "\n"
+    << "cdq\n"
+    << "idiv ebx\n"
+    << "mov dword [" << place << "], eax";
+    code = ss.str();
+    return true;
+}
+
+genCode(ModExpr) {
+  if(!expr1->genCode())
+    return false;
+  if(!expr2->genCode())
+    return false;
+
+  std::ostringstream ss;
+  string_t expr1Place = getExprPlace(expr1);
+  string_t expr2Place = getExprPlace(expr2);
+  place = newTemp();
+
+  ss << expr1->code << "\n"
+      << expr2->code << "\n"
+      << "mov eax, " << expr1Place << "\n"
+      << "mov ebx, " << expr2Place << "\n"
+      << "cdq\n"
+      << "idiv ebx\n"
+      << "mov dword [" << place << "], edx";
+      code = ss.str();
+  return true;
+}
+
+genCode(FuncNode){
+  if(!expr->genCode()){
+    return false;
+  }
+
+  std::ostringstream ss;
+
+  ss  << "main: \n"
+      << "push ebp \n"
+      << "mov ebp, esp \n"
+      << "sub esp, " << -varOffset << "\n"
+
+      << expr->code << "\n"
+
+      << "mov eax, dword[" << expr->place << "]\n"
+      << "add esp, " << -varOffset << "\n"
+      << "leave\nret\n";
+
+  code = ss.str();
+  return true;
+}
+
+

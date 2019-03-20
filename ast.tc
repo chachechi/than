@@ -1,0 +1,74 @@
+%option lang = "C++"
+%option reentrant
+
+%decls %{
+
+#include <stdio.h>
+#include <iostream.h>
+#include <string>
+#include <cstddef>
+#include <list>
+
+using stdString = std::string;
+using stdCout = std:cout;
+
+%}
+
+%{
+    #include "ast.h"
+%}
+
+%node expression %abstract %typedef
+
+%node binaryExpression expression %abstract = {
+    expression * exp1;
+    expression * exp2;
+}
+
+%node numExpression expression = {
+    int value;
+}
+
+/*%node idExpression expression = {
+    stdString id;
+}*/
+
+%node addExpression binaryExpression
+%node subExpression binaryExpression
+%node multExpression binaryExpression
+%node divExpression binaryExpression 
+%node equalExpression binaryExpression
+
+%node statement %abstract %typedef
+
+%node ifStatement statement = {
+    expression * condition;
+    statement * ifTrue;
+    statement * ifFalse;
+}
+
+%node printStatement statement = {
+    expression * printValue;
+}
+
+%operation %virtual void exec(statement*)
+%operation %virtual int eval(expression*)
+
+eval(numExpression){ return value }
+eval(addExpression){return exp1->value + exp2->value}
+eval(subExpression){return exp1->value - exp2->value}
+eval(multExpression){return exp1->value * exp2->value}
+eval(divExpression){return exp1->value / exp2->value}
+eval(equalExpression){return exp1->value == exp2->value}
+
+exec(ifStatement){
+    if(condition->eval()){
+        ifTrue->exec();
+    }else {
+        ifFalse->exec();
+    }
+}
+
+exec(printStatement){ 
+    cout<< printValue->value <<endl; 
+}
